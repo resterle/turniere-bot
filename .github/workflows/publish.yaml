@@ -1,8 +1,8 @@
 name: Publish
 
 on:
-  push:
-    branches: ['main']
+  release: 
+    types: created
 
 permissions:
     contents: read
@@ -21,4 +21,4 @@ jobs:
       - uses: ko-build/setup-ko@v0.6
       - run: |
             tag=$(echo ${{ github.ref }} | cut -c11-)  # get tag name without tags/refs/ prefix.
-            ko build -B
+            ko build -B --platform=linux/amd64,linux/arm64
