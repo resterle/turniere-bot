@@ -74,7 +74,10 @@ func Parse(reader io.Reader) []Turnament {
 			case Location:
 				r.Location = extractText(t)
 			case Changed:
-				r.Changed = *extractDate(t, dateTimeFormat)
+				a := extractDate(t, dateTimeFormat)
+				if a != nil {
+					r.Changed = *a
+				}
 			case Series:
 				r.Series = extractSeries(t)
 			}
