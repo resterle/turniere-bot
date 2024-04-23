@@ -2,4 +2,4 @@ app = "turniere-bot"
 primary_region = "fra"
 
 [build]
-  image = "ghcr.io/resterle/turniere-bot/turnire-bot"
+  image = "ghcr.io/disc-golf-syndikat/turniere-bot/turnire-bot"
