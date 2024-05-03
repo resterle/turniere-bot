@@ -3,6 +3,7 @@ package turniere
 import (
 	"io"
 	"log"
+	"net/url"
 	"strings"
 	"time"
 
@@ -40,7 +41,7 @@ func Parse(reader io.Reader) []Turnament {
 	table := doc.Find("#list_tournaments")
 	table.Find("thead tr").Each(func(i int, s *goquery.Selection) {
 		s.Find("th").Each(func(j int, t *goquery.Selection) {
-			title := t.Text()
+			title := t.Contents().Nodes[0].Data
 			switch title {
 			case "Turnier":
 				keys[j] = Title
@@ -82,6 +83,9 @@ func Parse(reader io.Reader) []Turnament {
 				r.Series = extractSeries(t)
 			}
 		})
+		u, _ := url.Parse(r.Link)
+		v := u.Query()
+		r.Id = v["id"][0]
 		result = append(result, *r)
 	})
 	return result
@@ -115,11 +119,11 @@ func extractDate(td *goquery.Selection, format string) *time.Time {
 }
 
 func extractSeries(td *goquery.Selection) []string {
-	result := make([]string, 4)
+	result := []string{}
 	td.Find("span").Each(func(i int, s *goquery.Selection) {
 		t := extractText(s)
 		if t != "Info" {
-			result[i] = t
+			result = append(result, t)
 		}
 	})
 	return result
