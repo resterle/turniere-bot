@@ -16,6 +16,6 @@ type Turnament struct {
 
 type Phase struct {
 	Title                 string
-	RegistrationStartDate *time.Time
+	RegistrationStartDate time.Time
 	Requirements          map[string]string
 }
