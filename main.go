@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"sync"
@@ -22,9 +23,13 @@ import (
 // NOTE: Players list
 // https://turniere.discgolf.de/index.php?p=events&sp=list-players&id=2124
 
+const baseUrl = "https://turniere.discgolf.de/index.php?p=events"
 const discordTokenName = "DISCORD_TOKEN"
-const schduleInterval = time.Hour * 1
+const schduleInterval = time.Hour
 const notificationOffset = time.Hour * 10
+
+var bot *discord.Bot
+var turnaments = make(map[string]*turniere.Turnament)
 
 func main() {
 	token, tokenSet := os.LookupEnv(discordTokenName)
@@ -45,7 +50,7 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	go startScheduling(ticker.C, exit, &wg, bot)
+	go startScheduling(ticker.C, exit, &wg)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
@@ -62,14 +67,14 @@ func main() {
 	os.Exit(0)
 }
 
-func startScheduling(t <-chan time.Time, exit chan int, wg *sync.WaitGroup, bot *discord.Bot) {
+func startScheduling(t <-chan time.Time, exit chan int, wg *sync.WaitGroup) {
 	defer wg.Done()
-	task(bot)
+	task()
 	for {
 		select {
 		case <-t:
 			log.Print("Scheduling task")
-			task(bot)
+			task()
 			continue
 		case <-exit:
 			log.Print("Stopping scheduler")
@@ -78,44 +83,81 @@ func startScheduling(t <-chan time.Time, exit chan int, wg *sync.WaitGroup, bot 
 	}
 }
 
-func task(bot *discord.Bot) {
-	reader, err := httpReader()
+func task() {
+	reader, err := httpReader(baseUrl)
+	//reader, err := fileReader("index.html")
 	if err == nil {
-		tournaments := turniere.Parse(*reader)
-		maybeSendMessages(bot, tournaments)
+		fetched := turniere.Parse(*reader)
+		updated := mergeTurnaments(fetched)
+		fetchDetails(updated)
+		maybeSendMessages()
 	}
 }
 
-func maybeSendMessages(bot *discord.Bot, tournaments []turniere.Turnament) {
+func mergeTurnaments(fetched []turniere.Turnament) []string {
+	updated := []string{}
+	for i, ft := range fetched {
+		t, present := turnaments[ft.Id]
+		if !present || (present && ft.Changed.After(t.Changed)) {
+			turnaments[ft.Id] = &fetched[i]
+			updated = append(updated, ft.Id)
+		}
+	}
+	return updated
+}
+
+func fetchDetails(ids []string) {
+	for _, id := range ids {
+		if turnaments[id].RegistrationStartDate != nil {
+			time.Sleep(time.Millisecond * 500)
+			log.Printf("Fetch details for %s # %v\n", turnaments[id].Title, turnaments[id].RegistrationStartDate)
+			v := url.Values{}
+			v.Set("sp", "view")
+			v.Set("id", id)
+			reader, err := httpReader(baseUrl + "&" + v.Encode())
+			//reader, err := fileReader("details.html")
+			if err == nil {
+				phases := turniere.ParsePhases(*reader)
+				p, _ := turnaments[id]
+				p.Phases = append(p.Phases, phases...)
+			}
+		}
+	}
+}
+
+func maybeSendMessages() {
 	now := time.Now()
-	for _, t := range tournaments {
+	for _, t := range turnaments {
 		if t.RegistrationStartDate != nil {
-			d := t.RegistrationStartDate.Sub(now)
-			if d < notificationOffset && d > notificationOffset-schduleInterval {
-				text := "⏰ Turnieranmeldung für:\n\"**%s**\"\nöffnet **heute um %s Uhr**\n🔗 %s"
-				bot.SendMessage(fmt.Sprintf(text, t.Title, t.RegistrationStartDate.Format("15:04"), t.Link))
+			for _, p := range t.Phases {
+				d := p.RegistrationStartDate.Sub(now)
+				if d < notificationOffset && d > notificationOffset-schduleInterval {
+					text := "⏰ Turnieranmeldung für \"**%s**\"\n%s\nöffnet **heute um %s Uhr**\n📍 %s\n🔗 %s"
+					bot.SendMessage(fmt.Sprintf(text, t.Title, p.Title, p.RegistrationStartDate.Format("15:04"), t.Location, t.Link))
+					//fmt.Printf(text, t.Title, p.Title, p.RegistrationStartDate.Format("15:04"), t.Location, t.Link)
+				}
 			}
 		}
 	}
 }
 
 // For development purposes
-func fileReader() io.Reader {
-	fi, err := os.Open("events.html")
+func fileReader(filename string) (io.Reader, error) {
+	fi, err := os.Open(filename)
 	if err != nil {
 		panic(err)
 	}
-	return fi
+	return fi, nil
 }
 
-func httpReader() (*io.ReadCloser, error) {
-	resp, err := http.Get("https://turniere.discgolf.de/index.php?p=events")
+func httpReader(url string) (*io.ReadCloser, error) {
+	resp, err := http.Get(url)
 	if err != nil {
-		log.Printf("Error while fetching tournament data from web. %s", err)
+		log.Printf("Error while fetching %s. %s", url, err)
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Error while fetching tournament data from web expected status code of %d got %d", http.StatusOK, resp.StatusCode)
+		log.Printf("Error while fetching %s expected status code of %d got %d", url, http.StatusOK, resp.StatusCode)
 		return nil, errors.New("status code error")
 	}
 	return &resp.Body, nil

@@ -128,3 +128,33 @@ func extractSeries(td *goquery.Selection) []string {
 	})
 	return result
 }
+
+func parseDateTime(i string) time.Time {
+	raw := strings.TrimSpace(i)
+	t, _ := time.ParseInLocation(dateTimeFormat, raw, &location)
+	return t
+}
+
+func ParsePhases(reader io.Reader) []Phase {
+	phases := []Phase{}
+
+	doc, err := goquery.NewDocumentFromReader(reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	card := doc.Find(".card").FilterFunction(func(i int, s *goquery.Selection) bool {
+		t := s.Find(".card-title")
+		return t != nil && t.Text() == "Anmeldephasen"
+	})
+
+	card.Find(".row").First().Find(".card-header h5").Each(func(i int, s *goquery.Selection) {
+		title := s.Text()
+		dr := s.Parent().Find("small").Text()
+		dates := strings.Split(dr, "-")
+
+		phases = append(phases, Phase{Title: title, RegistrationStartDate: parseDateTime(dates[0])})
+	})
+
+	return phases
+}
