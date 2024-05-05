@@ -37,7 +37,8 @@ func main() {
 		log.Fatalf("%s needs to be set", discordTokenName)
 	}
 
-	bot, err := discord.InitBot(token)
+	var err error
+	bot, err = discord.InitBot(token)
 	if err != nil {
 		log.Fatalf("Error while creating bot. %s", err)
 	}
